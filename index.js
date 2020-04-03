@@ -20,34 +20,34 @@ cron.schedule('0 0,15,30,45 * * * *', doTheJob)
 
 async function doTheJob () {
   try {
-    console.log('\n')
-    console.log('START BACKUP')
+    console.log('START SYNCING')
     console.log(moment().format())
-    console.log('==============')
-    console.log('Create sheets Api client...')
+    console.log('=========================\n')
+    console.log('Creating Google Sheets API client...')
     const sheetsApi = await createSheetsApiClient()
     console.log('done.\n')
 
-    console.log('Get raw sheet data...\n')
+    console.log('Getting raw sheet data...')
     const initRawSheetData = await getRawSheetData(sheetsApi)
     const initSheetData = makeObjectsFromRawSheetData(initRawSheetData)
-    console.log(`${initSheetData.length} in sheet, latest one is:\n`)
-    console.log(initSheetData.slice(0, 1))
+    console.log(`${initSheetData.length} entries in sheet, latest one is:`)
+    console.log(`${initSheetData[0].title} - Published on: ${moment(initSheetData[0].publication_date, 'X').format()}`)
     console.log('\n')
     
-    console.log('Fetch new stuff from Libération API...\n')
+    console.log('Fetching new entries from Libération API...\n')
     const fetchedFromLibeApi = await fetchNewEntriesInLibeApi(initSheetData)
+
+    if (!fetchedFromLibeApi.length) return console.log('Nothing new to save. See you.\n\n')
+
     console.log(fetchedFromLibeApi)
     console.log('\n')
 
-    if (!fetchedFromLibeApi.length) return console.log('Nothing new to save. See you.')
-
     const newRawSheetData = await prepareNewRawSheetData(fetchedFromLibeApi, initSheetData)
-    console.log(`${newRawSheetData.length} in new sheet, latest one is:\n`)
-    console.log(newRawSheetData.slice(0, 1))
+    console.log(`${newRawSheetData.length} entries in new sheet, latest one is:\n`)
+    console.log(newRawSheetData[0].title, moment(initSheetData[0].publication_date, 'X').format())
     console.log('\n')
 
-    console.log('Saving new data...')
+    console.log('Saving new sheet...')
     const savedNewSheetData = await saveNewSheetData(newRawSheetData, sheetsApi)
     console.log('done.\n')
 
@@ -57,8 +57,7 @@ async function doTheJob () {
     const jsonInitSheetData = JSON.stringify(initSheetData)
     fs.writeFileSync(backupFileOutputPath, jsonInitSheetData, 'utf8')
     console.log('done.\n')
-
-    console.log('See you.')
+    console.log('See you.\n\n')
 
   } catch (err) {
     console.log(err)
@@ -131,8 +130,10 @@ function makeObjectsFromRawSheetData (rawData = []) {
  */
 
 async function fetchNewEntriesInLibeApi (initEntries = [], currUrl = libeApiBaseUrl, results = [], page = 0) {
-  console.log(`Loading API page ${page}`)
-  const pageData = await fetchLibeApiPage(currUrl)
+  console.log(`Loading API page ${page}...`)
+  console.log(`URL: ${currUrl}`)
+  const res = await fetch(currUrl)
+  const pageData = await res.json()
   const pageResults = pageData.results
   const pageResultsThatAreNew = pageResults.filter(entry => {
     const entryId = entry.id.toString()
@@ -150,19 +151,6 @@ async function fetchNewEntriesInLibeApi (initEntries = [], currUrl = libeApiBase
   const newResults = [...results, ...pageResultsThatAreNew]
   if (!pageData.next || !pageResultsThatAreNew.length) return newResults
   return fetchNewEntriesInLibeApi(initEntries, pageData.next, newResults, page + 1)
-}
-
-/*
- *
- * FETCH LIBÉ API PAGE
- *
- */
-
-async function fetchLibeApiPage (url) {
-  console.log(`Fetching ${url}...`)
-  const res = await fetch(url)
-  const data = await res.json()
-  return data
 }
 
 /*
